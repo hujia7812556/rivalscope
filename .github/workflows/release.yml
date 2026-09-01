@@ -183,9 +183,14 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          # 参数格式自检(仅输出长度/形态,不泄露值;常见坑:Secret 值带尾部空格或换行)
+          echo "DEPLOY_HOST 长度=${#DEPLOY_HOST}, DEPLOY_PORT 长度=${#DEPLOY_PORT:-0}"
+          echo "$DEPLOY_HOST" | grep -qE '^[a-zA-Z0-9.:-]+$' || echo "::warning::DEPLOY_HOST 含特殊字符(检查是否有多余空格/换行)"
+          echo "${DEPLOY_PORT:-22}" | grep -qE '^[0-9]+$' || echo "::warning::DEPLOY_PORT 不是纯数字"
+          # 海外 runner 到源站握手可能较慢,超时给到 10s(默认 5s)
           PORT="${DEPLOY_PORT:-22}"
-          ssh-keyscan -p "$PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          grep -q "$DEPLOY_HOST" ~/.ssh/known_hosts   # keyscan 失败(端口/防火墙)时立即报错
+          ssh-keyscan -p "$PORT" -T 10 "$DEPLOY_HOST" >> ~/.ssh/known_hosts || true
+          grep -q "$DEPLOY_HOST" ~/.ssh/known_hosts || { echo "::error::未获取到主机指纹(检查 HOST/PORT 值格式与网络连通性)"; exit 1; }
 
       - name: 渲染部署配置(nginx / systemd / config.yaml)
         env:
