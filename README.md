@@ -90,7 +90,7 @@ git push origin main                        # 日常合并自动发布+部署
 
 **部署参数在 GitHub 仓库配置**(改配置不用改代码)。**注意:仓库是 public 的,全部参数放 Secrets**(Secrets 加密存储且日志自动脱敏;Variables 对 public 仓库可被读取、且会在 workflow 日志中明文展示):
 
-- Secrets:`DEPLOY_SSH_KEY`(服务器 SSH 私钥)、`DEPLOY_HOST`(服务器地址)、`DEPLOY_USER`(SSH 用户)、`DEPLOY_PATH`(部署目录)、`NGINX_SERVER_NAME`(对外域名)、`DEPLOY_CONFIG`(完整的 config.yaml 内容,多行)
+- Secrets:`DEPLOY_SSH_KEY`(服务器 SSH 私钥)、`DEPLOY_HOST`(服务器地址)、`DEPLOY_PORT`(SSH 端口,默认 22)、`DEPLOY_USER`(SSH 用户)、`DEPLOY_PATH`(部署目录)、`NGINX_SERVER_NAME`(对外域名)、`DEPLOY_CONFIG`(完整的 config.yaml 内容,多行)
 
 未配置 `DEPLOY_HOST` 时只构建发布、跳过部署。部署内容:替换 `bin/rivalscope`、安装 systemd 服务与 nginx 配置(均按上述 Secrets 渲染,**每次部署覆盖**)、重启并做健康检查。`config.yaml` 由 `DEPLOY_CONFIG` 控制:配置了则每次覆盖写入(旧配置自动备份为 `config/config.yaml.bak`);未配置则仅首次部署从模板生成,之后不覆盖。服务器一次性前提:部署用户具备 `systemctl`/`nginx` 相关命令的 sudo 免密,DNS 已解析,证书已签发。
 

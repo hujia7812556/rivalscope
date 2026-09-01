@@ -10,6 +10,7 @@
 #   Settings → Secrets and variables → Actions → Secrets:
 #     DEPLOY_SSH_KEY    服务器 SSH 私钥(部署用户可登录,建议 ed25519)
 #     DEPLOY_HOST       服务器地址(IP 或域名)
+#     DEPLOY_PORT       SSH 端口(如 11022;未配置默认 22)
 #     DEPLOY_USER       SSH 用户(需对 systemctl/nginx 配置 sudo NOPASSWD)
 #     DEPLOY_PATH       部署目录(如 /home/ecs-user/myproject/jenny/rivalscope)
 #     NGINX_SERVER_NAME 对外域名(如 rivalscope.jerehu.com)
@@ -159,6 +160,7 @@ jobs:
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}   # 服务器 SSH 端口,未配置默认 22
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
       NGINX_SERVER_NAME: ${{ secrets.NGINX_SERVER_NAME }}
       VERSION: ${{ needs.prepare.outputs.version }}
@@ -181,7 +183,9 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          PORT="${DEPLOY_PORT:-22}"
+          ssh-keyscan -p "$PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          grep -q "$DEPLOY_HOST" ~/.ssh/known_hosts   # keyscan 失败(端口/防火墙)时立即报错
 
       - name: 渲染部署配置(nginx / systemd / config.yaml)
         env:
@@ -204,17 +208,19 @@ jobs:
 
       - name: 上传文件到服务器
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/bin' '$DEPLOY_PATH/config'"
-          scp artifacts/rivalscope-linux-amd64.tar.gz config/config.example.yaml \
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/bin' '$DEPLOY_PATH/config'"
+          scp -P "$PORT" artifacts/rivalscope-linux-amd64.tar.gz config/config.example.yaml \
               artifacts/rivalscope.service artifacts/rivalscope.conf \
               "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           if [ -f artifacts/config.yaml ]; then
-            scp artifacts/config.yaml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+            scp -P "$PORT" artifacts/config.yaml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           fi
 
       - name: 安装并重启服务
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" env DEPLOY_PATH="$DEPLOY_PATH" bash -s <<'REMOTE'
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" env DEPLOY_PATH="$DEPLOY_PATH" bash -s <<'REMOTE'
           set -euo pipefail
           cd "$DEPLOY_PATH"
 
