@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Table } from 'antd'
+import { Card, Table } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import type { FilterValue, SorterResult } from 'antd/es/table/interface'
 import { fetchMessages } from '../api'
@@ -73,9 +73,9 @@ export default function MessagesPage() {
         </a>
       ),
     },
-    { title: '转发', dataIndex: 'forward', width: 100, sorter: true },
-    { title: '评论', dataIndex: 'comment', width: 100, sorter: true },
-    { title: '点赞', dataIndex: 'like', width: 100, sorter: true },
+    { title: '转发', dataIndex: 'forward', width: 100, align: 'right', sorter: true },
+    { title: '评论', dataIndex: 'comment', width: 100, align: 'right', sorter: true },
+    { title: '点赞', dataIndex: 'like', width: 100, align: 'right', sorter: true },
     { title: '发布时间', dataIndex: 'pubtime', width: 130, sorter: true },
     { title: '抓取时间', dataIndex: 'crawl_time', width: 180 },
   ]
@@ -89,7 +89,7 @@ export default function MessagesPage() {
   }
 
   return (
-    <div>
+    <Card size="small" style={{ borderRadius: 12 }} styles={{ body: { paddingTop: 16 } }}>
       <SearchFilter
         value={filter}
         onChange={setFilter}
@@ -105,7 +105,8 @@ export default function MessagesPage() {
         pagination={pagination}
         onChange={handleTableChange}
         scroll={{ x: 1200 }}
+        size="middle"
       />
-    </div>
+    </Card>
   )
 }

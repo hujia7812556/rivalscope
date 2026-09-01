@@ -1,8 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Table } from 'antd'
+import { Button, Card, Col, Row, Statistic, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { DownloadOutlined } from '@ant-design/icons'
+import {
+  DownloadOutlined,
+  FileTextOutlined,
+  HeartOutlined,
+  InteractionOutlined,
+  TeamOutlined,
+} from '@ant-design/icons'
 import { fetchStatistics } from '../api'
 import type { WeiboStatistics } from '../types'
 import SearchFilter, { toQueryParams } from '../components/SearchFilter'
@@ -31,6 +37,25 @@ const excelHeaders: Record<string, string> = {
 const numSorter = (key: keyof WeiboStatistics) => (a: WeiboStatistics, b: WeiboStatistics) =>
   Number(a[key]) - Number(b[key])
 
+/** 摘要卡配置:图标、标题、取值函数、配色 */
+const summaryCards = [
+  { key: 'accounts', title: '监控账号', icon: <TeamOutlined />, color: '#4f46e5', bg: '#eef2ff' },
+  { key: 'feeds', title: '范围内微博', icon: <FileTextOutlined />, color: '#0891b2', bg: '#ecfeff' },
+  { key: 'interaction', title: '总互动量', icon: <InteractionOutlined />, color: '#d97706', bg: '#fffbeb' },
+  { key: 'likes', title: '总点赞', icon: <HeartOutlined />, color: '#e11d48', bg: '#fff1f2' },
+] as const
+
+/** 从统计行计算摘要指标 */
+function summarize(rows: WeiboStatistics[]) {
+  const feeds = rows.reduce((s, r) => s + r.count, 0)
+  const interaction = rows.reduce(
+    (s, r) => s + Number(r.forward_sum) + Number(r.comment_sum) + Number(r.like_sum),
+    0,
+  )
+  const likes = rows.reduce((s, r) => s + Number(r.like_sum), 0)
+  return { accounts: rows.length, feeds, interaction, likes }
+}
+
 /**
  * 统计结果页:按账号聚合的转发/评论/点赞统计。
  * 全量拉取(不分页),排序全部在前端完成,支持导出 Excel。
@@ -53,53 +78,90 @@ export default function StatisticsPage() {
     setQuery({})
   }
 
+  const summary = useMemo(() => summarize(rows), [rows])
+  const summaryValues: Record<string, number> = summary
+
   const columns: ColumnsType<WeiboStatistics> = [
-    { title: 'id', dataIndex: 'id', width: 70, fixed: 'left', sorter: numSorter('id') },
+    { title: 'id', dataIndex: 'id', width: 64, fixed: 'left', sorter: numSorter('id') },
     { title: '名称', dataIndex: 'name', width: 150, fixed: 'left' },
-    { title: '粉丝数', dataIndex: 'fans', width: 110, sorter: numSorter('fans') },
-    { title: '总微博数', dataIndex: 'feed', width: 110, sorter: numSorter('feed') },
-    { title: '微博数', dataIndex: 'count', width: 100, sorter: numSorter('count') },
-    { title: '总转发数', dataIndex: 'forward_sum', width: 110, sorter: numSorter('forward_sum') },
-    { title: '总评论数', dataIndex: 'comment_sum', width: 110, sorter: numSorter('comment_sum') },
-    { title: '总点赞数', dataIndex: 'like_sum', width: 110, sorter: numSorter('like_sum') },
-    { title: '平均转发数', dataIndex: 'forward_avg', width: 120, sorter: numSorter('forward_avg') },
-    { title: '平均评论数', dataIndex: 'comment_avg', width: 120, sorter: numSorter('comment_avg') },
-    { title: '平均点赞数', dataIndex: 'like_avg', width: 120, sorter: numSorter('like_avg') },
-    { title: '最大转发数', dataIndex: 'forward_max', width: 120, sorter: numSorter('forward_max') },
-    { title: '最大评论数', dataIndex: 'comment_max', width: 120, sorter: numSorter('comment_max') },
-    { title: '最大点赞数', dataIndex: 'like_max', width: 120, sorter: numSorter('like_max') },
+    { title: '粉丝数', dataIndex: 'fans', width: 110, align: 'right', sorter: numSorter('fans') },
+    { title: '总微博数', dataIndex: 'feed', width: 110, align: 'right', sorter: numSorter('feed') },
+    { title: '微博数', dataIndex: 'count', width: 100, align: 'right', sorter: numSorter('count') },
+    { title: '总转发数', dataIndex: 'forward_sum', width: 110, align: 'right', sorter: numSorter('forward_sum') },
+    { title: '总评论数', dataIndex: 'comment_sum', width: 110, align: 'right', sorter: numSorter('comment_sum') },
+    { title: '总点赞数', dataIndex: 'like_sum', width: 110, align: 'right', sorter: numSorter('like_sum') },
+    { title: '平均转发数', dataIndex: 'forward_avg', width: 120, align: 'right', sorter: numSorter('forward_avg') },
+    { title: '平均评论数', dataIndex: 'comment_avg', width: 120, align: 'right', sorter: numSorter('comment_avg') },
+    { title: '平均点赞数', dataIndex: 'like_avg', width: 120, align: 'right', sorter: numSorter('like_avg') },
+    { title: '最大转发数', dataIndex: 'forward_max', width: 120, align: 'right', sorter: numSorter('forward_max') },
+    { title: '最大评论数', dataIndex: 'comment_max', width: 120, align: 'right', sorter: numSorter('comment_max') },
+    { title: '最大点赞数', dataIndex: 'like_max', width: 120, align: 'right', sorter: numSorter('like_max') },
     { title: '抓取时间', dataIndex: 'crawl_time', width: 170, sorter: numSorter('crawl_time') },
   ]
 
   return (
     <div>
-      <SearchFilter
-        value={filter}
-        onChange={setFilter}
-        onSearch={handleSearch}
-        onReset={handleReset}
-        loading={isFetching}
-        accountLabel="名称"
-        extra={
-          <Button
-            type="primary"
-            icon={<DownloadOutlined />}
-            disabled={rows.length === 0}
-            onClick={() => exportToExcel('weibo.xlsx', excelHeaders, rows)}
-          >
-            导出
-          </Button>
-        }
-      />
-      <Table<WeiboStatistics>
-        rowKey="id"
-        columns={columns}
-        dataSource={rows}
-        loading={isFetching}
-        pagination={false}
-        scroll={{ x: 1700, y: 650 }}
-        size="middle"
-      />
+      {/* 摘要指标卡 */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        {summaryCards.map((c) => (
+          <Col xs={12} md={6} key={c.key}>
+            <Card size="small" style={{ borderRadius: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 10,
+                    background: c.bg,
+                    color: c.color,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 20,
+                  }}
+                >
+                  {c.icon}
+                </div>
+                <Statistic
+                  title={<span style={{ fontSize: 13, color: '#667085' }}>{c.title}</span>}
+                  value={summaryValues[c.key] ?? 0}
+                  formatter={(v) => Number(v).toLocaleString()}
+                />
+              </div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Card size="small" style={{ borderRadius: 12 }} styles={{ body: { paddingTop: 16 } }}>
+        <SearchFilter
+          value={filter}
+          onChange={setFilter}
+          onSearch={handleSearch}
+          onReset={handleReset}
+          loading={isFetching}
+          accountLabel="名称"
+          extra={
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
+              disabled={rows.length === 0}
+              onClick={() => exportToExcel('weibo.xlsx', excelHeaders, rows)}
+            >
+              导出
+            </Button>
+          }
+        />
+        <Table<WeiboStatistics>
+          rowKey="id"
+          columns={columns}
+          dataSource={rows}
+          loading={isFetching}
+          pagination={false}
+          scroll={{ x: 1700, y: 620 }}
+          size="middle"
+        />
+      </Card>
     </div>
   )
 }

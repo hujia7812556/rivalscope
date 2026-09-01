@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Form, Input, Modal, Popconfirm, Space, Table, message } from 'antd'
+import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { createAccount, deleteAccount, fetchAccounts, updateAccount } from '../api'
@@ -111,7 +111,7 @@ export default function AccountsPage() {
   ]
 
   return (
-    <div>
+    <Card size="small" style={{ borderRadius: 12 }} styles={{ body: { paddingTop: 16 } }}>
       <div style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           添加微博号
@@ -123,6 +123,7 @@ export default function AccountsPage() {
         dataSource={rows}
         loading={isFetching}
         pagination={false}
+        size="middle"
       />
 
       <Modal
@@ -152,6 +153,6 @@ export default function AccountsPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </Card>
   )
 }
