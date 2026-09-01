@@ -87,32 +87,31 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # 当前部署目标只有一台 x86 ECS,只构建 linux/amd64。
+      # 需要新平台时往 include 里加一行即可(注意:并行 job 的 Release 附件
+      # 禁止同名公共文件,公共文件由 deploy job 从仓库直接取)。
       matrix:
         include:
           - goos: linux
             goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: arm64
     steps:
       - name: 拉取代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
 
       - name: 安装 Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: 安装 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -138,15 +137,17 @@ jobs:
           sha256sum rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz > rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
 
       - name: 上传到 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.version }}
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           generate_release_notes: true
+          # 只传各平台专属文件:三个 job 并行上传,禁止出现同名公共文件
+          # (否则并发删除/覆盖同名 asset 会 404;公共文件如 config.example.yaml
+          # 由 deploy job 直接从 checkout 的仓库取,不经 Release 中转)
           files: |
             rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
             rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
-            config/config.example.yaml
 
   # 部署:下载 linux/amd64 产物,SSH 上传并安装 nginx/systemd 配置,重启服务
   # 全部参数取 Secrets(日志自动脱敏);DEPLOY_HOST 未配置时跳过(判断见 prepare job)
@@ -163,7 +164,7 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       - name: 拉取代码(取部署模板)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 下载构建产物
         env:
@@ -172,8 +173,8 @@ jobs:
           gh release download "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --pattern 'rivalscope-linux-amd64.tar.gz' \
-            --pattern 'config.example.yaml' \
             --dir artifacts
+          # config.example.yaml 直接使用 checkout 的仓库文件,不经 Release 中转
 
       - name: 配置 SSH
         run: |
@@ -203,8 +204,8 @@ jobs:
 
       - name: 上传文件到服务器
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/bin' '$DEPLOY_PATH/config' '$DEPLOY_PATH/storage/logs'"
-          scp artifacts/rivalscope-linux-amd64.tar.gz artifacts/config.example.yaml \
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/bin' '$DEPLOY_PATH/config'"
+          scp artifacts/rivalscope-linux-amd64.tar.gz config/config.example.yaml \
               artifacts/rivalscope.service artifacts/rivalscope.conf \
               "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           if [ -f artifacts/config.yaml ]; then

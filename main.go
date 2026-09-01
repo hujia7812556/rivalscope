@@ -45,12 +45,8 @@ func main() {
 	}
 
 	logger, err := log.New(log.Options{
-		Level:      cfg.Log.Level,
-		Encoding:   cfg.Log.Encoding,
-		File:       cfg.Log.File,
-		MaxBackups: cfg.Log.MaxBackups,
-		MaxAge:     cfg.Log.MaxAge,
-		MaxSize:    cfg.Log.MaxSize,
+		Level:    cfg.Log.Level,
+		Encoding: cfg.Log.Encoding,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

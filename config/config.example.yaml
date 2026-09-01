@@ -36,9 +36,5 @@ data:
     # dsn: root:password@tcp(127.0.0.1:3306)/jenny_crawl?charset=utf8mb4&parseTime=True&loc=Local
 
 log:
-  level: info
-  encoding: console # console or json
-  file: "./storage/logs/server.log"
-  max_backups: 30
-  max_age: 7
-  max_size: 1024 # MB
+  level: info                    # 生产用 info;排查问题时临时改 debug
+  encoding: json                 # json 便于 journalctl 检索;人工看日志可改 console

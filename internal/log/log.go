@@ -1,4 +1,6 @@
-// Package log 提供 zap 日志初始化,支持 console/json 两种输出与 lumberjack 文件轮转。
+// Package log 提供 zap 日志初始化。
+// 日志只输出到 stdout,由 systemd 接入 journald(journalctl -u rivalscope 查看),
+// 轮转与磁盘限额由 journald 统一管理,应用不再写文件。
 package log
 
 import (
@@ -7,20 +9,15 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Options 日志初始化参数,来自配置文件 log 段。
 type Options struct {
-	Level      string // 日志级别:debug/info/warn/error
-	Encoding   string // console / json
-	File       string // 日志文件路径,为空则只输出到 stdout
-	MaxBackups int    // 保留的旧日志文件数量
-	MaxAge     int    // 旧文件保留天数
-	MaxSize    int    // 单文件大小上限(MB)
+	Level    string // 日志级别:debug/info/warn/error
+	Encoding string // console / json(json 更适合 journalctl 检索)
 }
 
-// New 根据配置创建 zap.Logger;同时输出到 stdout 与滚动文件(若配置了 File)。
+// New 根据配置创建 zap.Logger,输出到 stdout。
 func New(opt Options) (*zap.Logger, error) {
 	level := zapcore.InfoLevel
 	if err := level.UnmarshalText([]byte(opt.Level)); err != nil {
@@ -51,20 +48,5 @@ func New(opt Options) (*zap.Logger, error) {
 		encoder = zapcore.NewConsoleEncoder(encoderCfg)
 	}
 
-	cores := []zapcore.Core{
-		zapcore.NewCore(encoder, zapcore.Lock(os.Stdout), level),
-	}
-	// 配置了文件路径时,追加滚动文件输出
-	if opt.File != "" {
-		lj := &lumberjack.Logger{
-			Filename:   opt.File,
-			MaxBackups: opt.MaxBackups,
-			MaxAge:     opt.MaxAge,
-			MaxSize:    opt.MaxSize,
-			Compress:   true,
-		}
-		cores = append(cores, zapcore.NewCore(encoder, zapcore.AddSync(lj), level))
-	}
-
-	return zap.New(zapcore.NewTee(cores...), zap.AddCaller()), nil
+	return zap.New(zapcore.NewCore(encoder, zapcore.Lock(os.Stdout), level), zap.AddCaller()), nil
 }

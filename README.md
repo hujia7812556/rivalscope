@@ -86,7 +86,7 @@ git tag v1.0.0 && git push origin v1.0.0   # 正式发布
 git push origin main                        # 日常合并自动发布+部署
 ```
 
-产物:linux/amd64、linux/arm64、darwin/arm64 三个平台的单二进制(前端已嵌入、静态编译),附 sha256 校验与 `config.example.yaml`。
+产物:`linux/amd64` 单平台二进制(前端已嵌入、静态编译,对应部署服务器架构),附 sha256 校验;本机 macOS 调试用 `make build` 自行构建。
 
 **部署参数在 GitHub 仓库配置**(改配置不用改代码)。**注意:仓库是 public 的,全部参数放 Secrets**(Secrets 加密存储且日志自动脱敏;Variables 对 public 仓库可被读取、且会在 workflow 日志中明文展示):
 

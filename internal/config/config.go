@@ -36,12 +36,8 @@ type Config struct {
 	} `mapstructure:"data"`
 
 	Log struct {
-		Level      string `mapstructure:"level"`
-		Encoding   string `mapstructure:"encoding"` // console / json
-		File       string `mapstructure:"file"`
-		MaxBackups int    `mapstructure:"max_backups"`
-		MaxAge     int    `mapstructure:"max_age"`
-		MaxSize    int    `mapstructure:"max_size"`
+		Level    string `mapstructure:"level"`    // 日志级别:debug/info/warn/error
+		Encoding string `mapstructure:"encoding"` // console / json,输出到 stdout 由 journald 接管
 	} `mapstructure:"log"`
 }
 

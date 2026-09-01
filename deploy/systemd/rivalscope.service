@@ -14,10 +14,9 @@
 # 常用命令:
 #   systemctl status rivalscope                 # 运行状态
 #   systemctl restart|stop rivalscope           # 重启 / 停止
-#   journalctl -u rivalscope -f                 # 跟踪运行日志(stdout 部分)
-#   tail -f storage/logs/server.log             # 应用日志文件(zap 轮转)
-#
-# 说明:WorkingDirectory 必须设置,config.yaml 与 storage/logs 均使用相对路径。
+#   journalctl -u rivalscope -f                 # 跟踪日志(唯一日志入口,轮转由 journald 管理)
+#   journalctl -u rivalscope --since today      # 今日日志
+#   journalctl -u rivalscope -n 200             # 最近 200 行
 
 [Unit]
 Description=RivalScope 竞品观察(竞品社媒数据单体服务)
@@ -40,7 +39,7 @@ RestartSec=5
 KillSignal=SIGTERM
 TimeoutStopSec=10
 
-# 日志交由 journald(stdout/stderr),应用自身还会写 storage/logs/server.log
+# 日志唯一出口为 journald(应用输出 stdout/stderr,轮转与磁盘限额由 journald 管理)
 StandardOutput=journal
 StandardError=journal
 
