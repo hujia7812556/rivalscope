@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Card, Col, Row, Statistic, Table } from 'antd'
+import { Button, Card, Statistic, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
   DownloadOutlined,
@@ -101,10 +101,10 @@ export default function StatisticsPage() {
 
   return (
     <div>
-      {/* 摘要指标卡 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      {/* 摘要指标卡(flex 布局保证贴边,ant Row/Col 的 gutter 会在最左产生额外留白) */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         {summaryCards.map((c) => (
-          <Col xs={12} md={6} key={c.key}>
+          <div key={c.key} style={{ flex: 1, minWidth: 220 }}>
             <Card size="small" style={{ borderRadius: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div
@@ -129,9 +129,9 @@ export default function StatisticsPage() {
                 />
               </div>
             </Card>
-          </Col>
+          </div>
         ))}
-      </Row>
+      </div>
 
       <Card size="small" style={{ borderRadius: 12 }} styles={{ body: { paddingTop: 16 } }}>
         <SearchFilter
@@ -158,7 +158,8 @@ export default function StatisticsPage() {
           dataSource={rows}
           loading={isFetching}
           pagination={false}
-          scroll={{ x: 1700, y: 620 }}
+          // 不设 scroll.x:表格宽度 100%,各列按声明的 width 比例自然分配,宽屏无右侧留白
+          scroll={{ y: 620 }}
           size="middle"
         />
       </Card>

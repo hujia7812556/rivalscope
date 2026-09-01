@@ -62,19 +62,19 @@ export default function AppLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="dark" width={216} style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+      <Sider theme="dark" width={168} style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>
         {/* 品牌区 */}
         <div
           style={{
             height: 60,
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '0 20px',
+            gap: 8,
+            padding: '0 16px',
             borderBottom: '1px solid rgba(255,255,255,0.06)',
           }}
         >
-          <RadarChartOutlined style={{ fontSize: 22, color: '#818cf8' }} />
+          <RadarChartOutlined style={{ fontSize: 20, color: '#818cf8' }} />
           <div style={{ lineHeight: 1.2 }}>
             <div style={{ color: '#fff', fontSize: 15, fontWeight: 600, letterSpacing: 1 }}>
               竞品观察
@@ -109,17 +109,20 @@ export default function AppLayout() {
         <Header
           style={{
             background: token.colorBgContainer,
-            padding: '0 24px',
+            // 左侧与侧边栏品牌文字起点对齐(品牌区 padding 16 + 图标 20 + 间距 8 = 44)
+            padding: '0 24px 0 44px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             borderBottom: '1px solid #eef0f4',
           }}
         >
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#101828' }}>{meta.title}</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: '#101828', lineHeight: '22px' }}>
+              {meta.title}
+            </span>
             {meta.desc && (
-              <div style={{ fontSize: 12, color: '#98a2b3', marginTop: 2 }}>{meta.desc}</div>
+              <span style={{ fontSize: 12, color: '#98a2b3' }}>{meta.desc}</span>
             )}
           </div>
           <Dropdown
@@ -136,7 +139,7 @@ export default function AppLayout() {
             </Button>
           </Dropdown>
         </Header>
-        <Content style={{ padding: 20 }}>
+        <Content style={{ padding: 0, overflow: 'auto' }}>
           <Outlet />
         </Content>
       </Layout>

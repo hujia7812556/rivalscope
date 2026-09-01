@@ -104,7 +104,7 @@ export default function MessagesPage() {
         loading={isFetching}
         pagination={pagination}
         onChange={handleTableChange}
-        scroll={{ x: 1200 }}
+        // 不设 scroll.x:表格宽度 100%,各列按声明的 width 比例自然分配,宽屏无右侧留白
         size="middle"
       />
     </Card>
