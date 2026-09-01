@@ -178,20 +178,6 @@ jobs:
             --dir artifacts
           # config.example.yaml 直接使用 checkout 的仓库文件,不经 Release 中转
 
-      - name: 配置 SSH
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          # 参数格式自检(仅输出长度/形态,不泄露值;常见坑:Secret 值带尾部空格或换行)
-          echo "DEPLOY_HOST 长度=${#DEPLOY_HOST}, DEPLOY_PORT 长度=${#DEPLOY_PORT:-0}"
-          echo "$DEPLOY_HOST" | grep -qE '^[a-zA-Z0-9.:-]+$' || echo "::warning::DEPLOY_HOST 含特殊字符(检查是否有多余空格/换行)"
-          echo "${DEPLOY_PORT:-22}" | grep -qE '^[0-9]+$' || echo "::warning::DEPLOY_PORT 不是纯数字"
-          # 海外 runner 到源站握手可能较慢,超时给到 10s(默认 5s)
-          PORT="${DEPLOY_PORT:-22}"
-          ssh-keyscan -p "$PORT" -T 10 "$DEPLOY_HOST" >> ~/.ssh/known_hosts || true
-          grep -q "$DEPLOY_HOST" ~/.ssh/known_hosts || { echo "::error::未获取到主机指纹(检查 HOST/PORT 值格式与网络连通性)"; exit 1; }
-
       - name: 渲染部署配置(nginx / systemd / config.yaml)
         env:
           DEPLOY_CONFIG: ${{ secrets.DEPLOY_CONFIG }}
@@ -211,55 +197,81 @@ jobs:
             echo "::warning::未配置 DEPLOY_CONFIG,服务器 config.yaml 将保持现状(仅首次从模板生成)"
           fi
 
-      - name: 上传文件到服务器
+      # 以下使用 appleboy/ssh-action 与 scp-action 执行远程操作
+      # (与同机器其他项目的部署方式一致,Go SSH 实现不依赖 ssh-keyscan/known_hosts)
+      - name: 创建部署目录
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: mkdir -p '${{ secrets.DEPLOY_PATH }}/bin' '${{ secrets.DEPLOY_PATH }}/config'
+
+      - name: 汇总待上传文件
         run: |
-          PORT="${DEPLOY_PORT:-22}"
-          ssh -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/bin' '$DEPLOY_PATH/config'"
-          scp -P "$PORT" artifacts/rivalscope-linux-amd64.tar.gz config/config.example.yaml \
-              artifacts/rivalscope.service artifacts/rivalscope.conf \
-              "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-          if [ -f artifacts/config.yaml ]; then
-            scp -P "$PORT" artifacts/config.yaml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-          fi
+          mkdir -p deploy-files
+          cp artifacts/rivalscope-linux-amd64.tar.gz \
+             artifacts/rivalscope.service artifacts/rivalscope.conf \
+             config/config.example.yaml deploy-files/
+          [ -f artifacts/config.yaml ] && cp artifacts/config.yaml deploy-files/
+
+      - name: 上传文件到服务器
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          source: "deploy-files/*"
+          target: ${{ secrets.DEPLOY_PATH }}
+          strip_components: 1
+          rm: false
 
       - name: 安装并重启服务
-        run: |
-          PORT="${DEPLOY_PORT:-22}"
-          ssh -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" env DEPLOY_PATH="$DEPLOY_PATH" bash -s <<'REMOTE'
-          set -euo pipefail
-          cd "$DEPLOY_PATH"
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          envs: DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
 
-          # 1. 解压并替换二进制
-          tar -xzf rivalscope-linux-amd64.tar.gz
-          mv -f rivalscope-linux-amd64 bin/rivalscope
-          chmod +x bin/rivalscope
+            # 1. 解压并替换二进制
+            tar -xzf rivalscope-linux-amd64.tar.gz
+            mv -f rivalscope-linux-amd64 bin/rivalscope
+            chmod +x bin/rivalscope
 
-          # 2. 写入 config.yaml:CI 带来了新配置则覆盖(旧配置先备份便于回滚),
-          #    未带且服务器无配置时首次从模板生成
-          if [ -f config.yaml ]; then
-            if [ -f config/config.yaml ]; then
-              cp -f config/config.yaml config/config.yaml.bak
+            # 2. 写入 config.yaml:CI 带来了新配置则覆盖(旧配置先备份便于回滚),
+            #    未带且服务器无配置时首次从模板生成
+            if [ -f config.yaml ]; then
+              if [ -f config/config.yaml ]; then
+                cp -f config/config.yaml config/config.yaml.bak
+              fi
+              mv -f config.yaml config/config.yaml
+            elif [ ! -f config/config.yaml ]; then
+              cp config.example.yaml config/config.yaml
+              echo "首次部署:已从模板生成 config/config.yaml"
             fi
-            mv -f config.yaml config/config.yaml
-          elif [ ! -f config/config.yaml ]; then
-            cp config.example.yaml config/config.yaml
-            echo "首次部署:已从模板生成 config/config.yaml"
-          fi
 
-          # 3. 安装 systemd 服务
-          sudo cp rivalscope.service /etc/systemd/system/rivalscope.service
-          sudo systemctl daemon-reload
-          sudo systemctl enable rivalscope >/dev/null 2>&1 || true
+            # 3. 安装 systemd 服务
+            sudo cp rivalscope.service /etc/systemd/system/rivalscope.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable rivalscope >/dev/null 2>&1 || true
 
-          # 4. 安装 nginx 配置并重载(配置非法则中断,不 reload)
-          sudo cp rivalscope.conf /etc/nginx/conf.d/rivalscope.conf
-          sudo nginx -t
-          sudo systemctl reload nginx
+            # 4. 安装 nginx 配置并重载(配置非法则中断,不 reload)
+            sudo cp rivalscope.conf /etc/nginx/conf.d/rivalscope.conf
+            sudo nginx -t
+            sudo systemctl reload nginx
 
-          # 5. 重启服务并健康检查
-          sudo systemctl restart rivalscope
-          sleep 2
-          systemctl is-active rivalscope
-          curl -fsS -o /dev/null http://127.0.0.1:17317/login
-          echo "部署完成:$DEPLOY_PATH/bin/rivalscope 服务运行中"
-          REMOTE
+            # 5. 重启服务并健康检查
+            sudo systemctl restart rivalscope
+            sleep 2
+            systemctl is-active rivalscope
+            curl -fsS -o /dev/null http://127.0.0.1:17317/login
+            echo "部署完成:$DEPLOY_PATH/bin/rivalscope 服务运行中"
