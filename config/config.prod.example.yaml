@@ -1,0 +1,48 @@
+# RivalScope 生产环境配置模板
+#
+# 使用方式:按下方「需替换项」生成真实值后,整份内容粘贴到
+#   GitHub → Settings → Secrets and variables → Actions → Secrets → DEPLOY_CONFIG
+# 每次部署会自动覆盖服务器上的 config/config.yaml(旧配置备份为 config.yaml.bak)。
+# 本文件含占位符,可安全提交,不要填入真实密钥后提交。
+
+env: prod                        # prod:gin 使用 release 模式,日志更精简
+
+http:
+  host: 127.0.0.1                # 只监听本地,由 nginx 反代对外,不要改 0.0.0.0
+  port: 17317
+
+security:
+  jwt:
+    # 【需替换】随机密钥,生成命令:openssl rand -hex 32
+    # 泄露后果:任何人可伪造登录 token,务必只存在于 Secret 与服务器配置中
+    key: {{JWT_KEY}}
+    expire_hours: 2160           # token 有效期 90 天,家人使用无需频繁重登
+
+# 登录账号:几个人写几条,用户名密码登录(无注册)
+auth:
+  users:
+    - username: admin
+      # 【需替换】推荐 bcrypt hash(配置文件泄露也不暴露明文),生成命令:
+      #   htpasswd -bnBC 10 "" '你的明文密码' | tr -d ':\n'
+      # 也可直接写明文(服务端会自动识别两种形式)
+      password: {{ADMIN_PASSWORD_HASH}}
+      nickname: 管理员
+    - username: family
+      password: {{FAMILY_PASSWORD_HASH}}
+      nickname: 家人
+
+data:
+  db:
+    # 【需替换】指向爬虫写入数据的线上库(与 jennycrawl 体系同库)。
+    # 线上即本机 PostgreSQL 15(127.0.0.1:5432),jenny_crawl 库已建好;
+    # 必须包含 weibo_account / weibo_feed 表;本项目对库只读,不建表
+    driver: postgres
+    dsn: host=127.0.0.1 user={{DB_USER}} password={{DB_PASSWORD}} dbname=jenny_crawl port=5432 sslmode=disable TimeZone=Asia/Shanghai
+
+log:
+  level: info                    # 生产用 info;排查问题时临时改 debug
+  encoding: json                 # json 便于日志采集/检索;人工看日志可改 console
+  file: "./storage/logs/server.log"
+  max_backups: 30                # 保留 30 个轮转文件
+  max_age: 7                     # 保留 7 天
+  max_size: 1024                 # 单文件 1GB

@@ -1,0 +1,52 @@
+# RivalScope(竞品观察)systemd 服务模板
+#
+# ⚠️ 这是模板文件,包含以下占位符,不能直接使用:
+#   {{DEPLOY_PATH}}  部署目录(如 /home/ecs-user/myapp/rivalscope)
+#   {{DEPLOY_USER}}  运行服务的系统用户
+# GitHub Actions 部署时会自动渲染(见 .github/workflows/release.yml 的 deploy job)。
+#
+# 手动安装(先渲染再安装):
+#   sed -e 's|{{DEPLOY_PATH}}|/实际/部署/路径|g' -e 's|{{DEPLOY_USER}}|实际用户|g' \
+#       deploy/systemd/rivalscope.service > /tmp/rivalscope.service
+#   sudo cp /tmp/rivalscope.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rivalscope
+#
+# 常用命令:
+#   systemctl status rivalscope                 # 运行状态
+#   systemctl restart|stop rivalscope           # 重启 / 停止
+#   journalctl -u rivalscope -f                 # 跟踪运行日志(stdout 部分)
+#   tail -f storage/logs/server.log             # 应用日志文件(zap 轮转)
+#
+# 说明:WorkingDirectory 必须设置,config.yaml 与 storage/logs 均使用相对路径。
+
+[Unit]
+Description=RivalScope 竞品观察(竞品社媒数据单体服务)
+After=network.target
+# 若数据库与本机同机部署,可解除下一行注释确保先启数据库
+# Wants=postgresql.service
+
+[Service]
+Type=simple
+User={{DEPLOY_USER}}
+Group={{DEPLOY_USER}}
+WorkingDirectory={{DEPLOY_PATH}}
+ExecStart={{DEPLOY_PATH}}/bin/rivalscope -config config/config.yaml
+
+# 异常退出自动拉起(正常 stop 不触发)
+Restart=on-failure
+RestartSec=5
+
+# 优雅停机:先发 SIGTERM(main 里监听后最多 5 秒完成退出),超时再 SIGKILL
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# 日志交由 journald(stdout/stderr),应用自身还会写 storage/logs/server.log
+StandardOutput=journal
+StandardError=journal
+
+# 轻量加固
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

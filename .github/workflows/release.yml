@@ -1,0 +1,253 @@
+# RivalScope 发布与部署流程
+#
+# 触发方式:
+#   1. push 到 main            → 自动发布预发布版(版本号 v1.0.<run_number>)并部署
+#   2. 推送 v* tag             → 正式发布并部署(版本号即 tag,如 v1.0.0)
+#   3. Actions 页面手动触发     → 可输入版本号(留空自动生成),预发布版
+#
+# 部署参数全部来自 GitHub 仓库配置(无需改动本文件),仓库为 public,故全部使用
+# Secrets(加密存储且日志自动脱敏):
+#   Settings → Secrets and variables → Actions → Secrets:
+#     DEPLOY_SSH_KEY    服务器 SSH 私钥(部署用户可登录,建议 ed25519)
+#     DEPLOY_HOST       服务器地址(IP 或域名)
+#     DEPLOY_USER       SSH 用户(需对 systemctl/nginx 配置 sudo NOPASSWD)
+#     DEPLOY_PATH       部署目录(如 /home/ecs-user/myproject/jenny/rivalscope)
+#     NGINX_SERVER_NAME 对外域名(如 rivalscope.jerehu.com)
+#     DEPLOY_CONFIG     完整的 config.yaml 内容(多行)。配置后每次部署覆盖服务器上的
+#                       config/config.yaml(覆盖前备份为 config.yaml.bak);未配置时
+#                       仅首次部署从模板生成,之后不覆盖
+#   未配置 DEPLOY_HOST 时只构建发布,跳过部署。
+#   覆盖策略:二进制、nginx 配置、systemd 服务每次部署均覆盖;config.yaml 按
+#   DEPLOY_CONFIG 是否配置决定(见上)。
+#
+# 服务器侧前提(一次性):
+#   - DEPLOY_USER 具备免密 sudo(至少 systemctl / nginx / cp 到系统目录)
+#   - DNS 已解析 NGINX_SERVER_NAME,证书已签发(路径见 deploy/nginx/rivalscope.conf)
+#   - 未使用 DEPLOY_CONFIG 时,首次部署后需登录服务器编辑 config.yaml(数据库、登录账号)再重启
+
+name: Release & Deploy
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号(如 v2.0.0;留空自动生成 v1.0.<run_number>)'
+        required: false
+        type: string
+
+permissions:
+  contents: write # 创建 Release、创建 tag、上传产物
+
+jobs:
+  # 计算本次发布版本号、是否预发布、是否启用部署
+  prepare:
+    name: Prepare version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      prerelease: ${{ steps.ver.outputs.prerelease }}
+      deploy_enabled: ${{ steps.deploy_flag.outputs.enabled }}
+    steps:
+      - name: 计算版本号
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # tag 触发:正式版
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            # 手动触发且填写了版本号:按正式版发布
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            # main 自动发布:run_number 递增的预发布版
+            echo "version=v1.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # secrets 不能直接出现在 job/step 的 if 条件中,先转成布尔输出供 deploy 判断
+      - name: 是否启用部署
+        id: deploy_flag
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -n "$DEPLOY_HOST" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # 构建:前端 pnpm build → 嵌入 Go 二进制 → 上传 Release
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 构建前端
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: 编译后端(嵌入前端,静态编译)
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath -ldflags='-s -w' -o rivalscope-${GOOS}-${GOARCH} .
+
+      - name: 打包并生成校验和
+        run: |
+          tar -czf rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}
+          sha256sum rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz > rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+
+      - name: 上传到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.version }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          files: |
+            rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            rivalscope-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+            config/config.example.yaml
+
+  # 部署:下载 linux/amd64 产物,SSH 上传并安装 nginx/systemd 配置,重启服务
+  # 全部参数取 Secrets(日志自动脱敏);DEPLOY_HOST 未配置时跳过(判断见 prepare job)
+  deploy:
+    name: Deploy to server
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: needs.prepare.outputs.deploy_enabled == 'true'
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      NGINX_SERVER_NAME: ${{ secrets.NGINX_SERVER_NAME }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - name: 拉取代码(取部署模板)
+        uses: actions/checkout@v4
+
+      - name: 下载构建产物
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'rivalscope-linux-amd64.tar.gz' \
+            --pattern 'config.example.yaml' \
+            --dir artifacts
+
+      - name: 配置 SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: 渲染部署配置(nginx / systemd / config.yaml)
+        env:
+          DEPLOY_CONFIG: ${{ secrets.DEPLOY_CONFIG }}
+        run: |
+          # 渲染模板占位符(路径/用户/域名均来自 Secrets)
+          sed -e "s|{{DEPLOY_PATH}}|$DEPLOY_PATH|g" \
+              -e "s|{{DEPLOY_USER}}|$DEPLOY_USER|g" \
+              deploy/systemd/rivalscope.service > artifacts/rivalscope.service
+          sed "s|{{NGINX_SERVER_NAME}}|$NGINX_SERVER_NAME|g" \
+              deploy/nginx/rivalscope.conf > artifacts/rivalscope.conf
+          # 校验渲染结果:非注释行不允许残留占位符(模板注释中的说明文字除外)
+          ! grep -Eq '^[^#]*\{\{' artifacts/rivalscope.service artifacts/rivalscope.conf
+          # 配置了 DEPLOY_CONFIG 则生成完整 config.yaml,每次部署覆盖服务器配置
+          if [ -n "$DEPLOY_CONFIG" ]; then
+            printf '%s\n' "$DEPLOY_CONFIG" > artifacts/config.yaml
+          else
+            echo "::warning::未配置 DEPLOY_CONFIG,服务器 config.yaml 将保持现状(仅首次从模板生成)"
+          fi
+
+      - name: 上传文件到服务器
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/bin' '$DEPLOY_PATH/config' '$DEPLOY_PATH/storage/logs'"
+          scp artifacts/rivalscope-linux-amd64.tar.gz artifacts/config.example.yaml \
+              artifacts/rivalscope.service artifacts/rivalscope.conf \
+              "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          if [ -f artifacts/config.yaml ]; then
+            scp artifacts/config.yaml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          fi
+
+      - name: 安装并重启服务
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" env DEPLOY_PATH="$DEPLOY_PATH" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+
+          # 1. 解压并替换二进制
+          tar -xzf rivalscope-linux-amd64.tar.gz
+          mv -f rivalscope-linux-amd64 bin/rivalscope
+          chmod +x bin/rivalscope
+
+          # 2. 写入 config.yaml:CI 带来了新配置则覆盖(旧配置先备份便于回滚),
+          #    未带且服务器无配置时首次从模板生成
+          if [ -f config.yaml ]; then
+            if [ -f config/config.yaml ]; then
+              cp -f config/config.yaml config/config.yaml.bak
+            fi
+            mv -f config.yaml config/config.yaml
+          elif [ ! -f config/config.yaml ]; then
+            cp config.example.yaml config/config.yaml
+            echo "首次部署:已从模板生成 config/config.yaml"
+          fi
+
+          # 3. 安装 systemd 服务
+          sudo cp rivalscope.service /etc/systemd/system/rivalscope.service
+          sudo systemctl daemon-reload
+          sudo systemctl enable rivalscope >/dev/null 2>&1 || true
+
+          # 4. 安装 nginx 配置并重载(配置非法则中断,不 reload)
+          sudo cp rivalscope.conf /etc/nginx/conf.d/rivalscope.conf
+          sudo nginx -t
+          sudo systemctl reload nginx
+
+          # 5. 重启服务并健康检查
+          sudo systemctl restart rivalscope
+          sleep 2
+          systemctl is-active rivalscope
+          curl -fsS -o /dev/null http://127.0.0.1:17317/login
+          echo "部署完成:$DEPLOY_PATH/bin/rivalscope 服务运行中"
+          REMOTE

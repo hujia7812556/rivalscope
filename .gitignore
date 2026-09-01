@@ -1,0 +1,20 @@
+# 本地真实配置(含密钥),从 config.example.yaml 复制
+config/config.yaml
+
+# 构建产物
+bin/
+web/dist/*
+!web/dist/.gitkeep
+
+# 运行时产物
+storage/
+*.log
+
+# 前端
+web/node_modules/
+web/dist/assets/
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store

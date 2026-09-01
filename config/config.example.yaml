@@ -1,0 +1,44 @@
+# RivalScope 配置模板:复制为 config/config.yaml 后按需修改
+env: local
+
+http:
+  host: 127.0.0.1
+  port: 17317
+
+security:
+  jwt:
+    # JWT 签名密钥,生产环境务必修改为随机长字符串
+    key: change-me-to-a-random-secret
+    # token 有效期(小时),默认 90 天
+    expire_hours: 2160
+
+# 登录账号(用户量固定,直接写在配置里,无用户表、无注册)。
+# password 支持明文,或 $2a$/$2b$/$2y$ 开头的 bcrypt hash(自动识别,推荐):
+#   生成方式:htpasswd -bnBC 10 "" '你的密码' | tr -d ':\n'
+auth:
+  users:
+    - username: admin
+      password: change-me
+      nickname: 管理员
+    - username: family
+      password: change-me-too
+      nickname: 家人
+
+data:
+  db:
+    driver: postgres
+    # weibo_account / weibo_feed 由外部爬虫写入,users 表由本服务自动迁移
+    dsn: host=localhost user=dbuser password=yourpassword dbname=jenny_crawl_test port=54321 sslmode=disable TimeZone=Asia/Shanghai
+    # 也可以用 sqlite / mysql:
+    # driver: sqlite
+    # dsn: storage/rivalscope.db?_busy_timeout=5000
+    # driver: mysql
+    # dsn: root:password@tcp(127.0.0.1:3306)/jenny_crawl?charset=utf8mb4&parseTime=True&loc=Local
+
+log:
+  level: info
+  encoding: console # console or json
+  file: "./storage/logs/server.log"
+  max_backups: 30
+  max_age: 7
+  max_size: 1024 # MB
